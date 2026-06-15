@@ -1,13 +1,13 @@
 using DuendeAuth;
 using DuendeAuth.Data;
+using DuendeAuth.Infrastructure;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connString = builder.Configuration.GetConnectionString("DefaultConnection")!;
-
-builder.Services.AddDbContext<ApplicationDbContext>(opt => opt.UseSqlite(connString));
+builder.Services.AddDbContext<ApplicationDbContext>(opt =>
+    opt.UseConfiguredProvider(builder.Configuration, "IdentityConnection"));
 
 builder.Services.AddIdentity<IdentityUser, IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
@@ -16,13 +16,13 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>()
 builder.Services
     .AddIdentityServer()
     .AddAspNetIdentity<IdentityUser>()
+    .AddDeveloperSigningCredential()
     .AddInMemoryApiScopes(Config.ApiScopes)
     .AddInMemoryApiResources(Config.ApiResources)
     .AddInMemoryClients(Config.GetClients(builder.Configuration))
     .AddOperationalStore(options =>
         options.ConfigureDbContext = b =>
-            b.UseSqlite(connString, sql =>
-                sql.MigrationsAssembly("DuendeAuth")));
+            b.UseConfiguredProvider(builder.Configuration, "GrantsConnection", "DuendeAuth"));
 
 var app = builder.Build();
 

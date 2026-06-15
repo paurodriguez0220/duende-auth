@@ -2,40 +2,61 @@
 
 ## What this is
 
-A personal reusable auth service (`DuendeAuth`) and a scaffolded API template (`ScalarApi`).
-Every new personal project can register itself as a client in `DuendeAuth` and use `ScalarApi` as a starting point.
+Two independent apps in one repo:
+
+| App | Solution | Purpose |
+|-----|----------|---------|
+| **DuendeAuth** | `duende.sln` | Reusable auth server — run once, shared by all personal projects |
+| **ScalarApi** | `ScalarApi.sln` | Sample client app showing how to connect to DuendeAuth |
+
+DuendeAuth is the long-lived service. Every new personal project registers as a client in `Config.cs` and points its JWT authority at DuendeAuth's URL.
 
 ## Structure
 
 ```
 src/
-  DuendeAuth/          Duende IdentityServer — issues JWT tokens
-  ScalarApi/           Protected API template — vertical slices, CQRS, Scalar UI
-  ScalarApi.Tests/     xUnit tests for ScalarApi
+  DuendeAuth/              Standalone auth server (duende.sln)
+    Infrastructure/
+      DbContextOptionsFactory.cs   DB provider abstraction
+    Data/
+      ApplicationDbContext.cs
+      SeedData.cs
+    Config.cs              In-memory client/scope/resource registration
+    Program.cs
+
+  ScalarApi/               Sample protected API (ScalarApi.sln)
+    Features/Forecasts/    Vertical slice example
+    Common/                Cross-cutting concerns
+    Infrastructure/
+
+  ScalarApi.Tests/         Tests for ScalarApi
 ```
 
 ## Commands
 
 ```bash
-# Build everything
+# Build auth server only
 dotnet build duende.sln
 
-# Run auth server (start this first — port 5001)
-dotnet run --project src/DuendeAuth
+# Build sample app only
+dotnet build ScalarApi.sln
 
-# Run the API (Scalar UI at /scalar/v1)
-dotnet run --project src/ScalarApi
+# Run auth server (start this first — other apps depend on it)
+dotnet run --project src/DuendeAuth --launch-profile https
+
+# Run sample API
+dotnet run --project src/ScalarApi --launch-profile https
 
 # Run tests
-dotnet test src/ScalarApi.Tests
+dotnet test ScalarApi.sln
 
-# Docker (ScalarApi only)
-docker build -f src/ScalarApi/Dockerfile -t scalar-api .
+# Verify auth server is healthy
+curl https://localhost:5001/.well-known/openid-configuration
 ```
 
 ## Local setup (first time)
 
-The `appsettings.Development.json` files are gitignored. Create them before running:
+`appsettings.Development.json` files are gitignored. Create before running:
 
 **`src/DuendeAuth/appsettings.Development.json`**
 ```json
@@ -45,25 +66,46 @@ The `appsettings.Development.json` files are gitignored. Create them before runn
 }
 ```
 
-**`src/ScalarApi/appsettings.Development.json`** — only needed if overriding defaults.
+## Switching databases (DuendeAuth)
+
+Set `Database:Provider` in config — the connection strings change but the code does not.
+
+| Provider | Value |
+|----------|-------|
+| SQLite (default) | `"sqlite"` |
+| PostgreSQL | `"postgres"` |
+| SQL Server | `"sqlserver"` |
+
+**Postgres example (`appsettings.json`):**
+```json
+{
+  "Database": { "Provider": "postgres" },
+  "ConnectionStrings": {
+    "IdentityConnection": "Host=localhost;Database=duende_identity;Username=...;Password=...",
+    "GrantsConnection":   "Host=localhost;Database=duende_grants;Username=...;Password=..."
+  }
+}
+```
+
+Put credentials in `appsettings.Development.json` (gitignored), never in `appsettings.json`.
+
+## Registering a new client app
+
+1. Add a `Client` entry to `src/DuendeAuth/Config.cs` → `GetClients()`
+2. Add the client secret to `appsettings.Development.json`
+3. In the new app, set `Auth:Authority` to `https://localhost:5001` (or the deployed URL)
 
 ## Conventions
 
-- Follow `C:\Users\paulo.rodriguez\Paulo\standards` — these take precedence over any defaults.
-- API routes are versioned: `/api/v1/...`
-- Vertical slices: one folder per feature under `Features/`, each slice owns its Query/Command/Handler/Validator.
-- Errors follow the shape: `{ "error": { "code": "...", "message": "...", "details": [] } }`
-- Named constants live in `Common/Constants/` — no magic strings in code.
-- Commits follow Conventional Commits: `feat(scope): description`
-
-## Adding a new client to DuendeAuth
-
-Edit `src/DuendeAuth/Config.cs` → add an entry to `GetClients()` with a new `ClientId`.
-Add the corresponding secret to `appsettings.Development.json` (never hardcode it).
+Standards at `C:\Users\paulo.rodriguez\Paulo\standards` take precedence.
+- API routes versioned: `/api/v1/...`
+- Errors: `{ "error": { "code": "...", "message": "...", "details": [] } }`
+- Named constants in `Common/Constants/` — no magic strings
+- Commits: Conventional Commits — `feat(scope): description`
 
 ## Never do
 
-- Hardcode secrets anywhere in source files — use config or environment variables.
-- Add magic strings inline — define them in `PolicyNames` or equivalent constants.
-- Commit `appsettings.Development.json` or `appsettings.Local.json`.
-- Push directly to `main` — use feature branches and PRs.
+- Hardcode secrets — use config or environment variables
+- Commit `appsettings.Development.json` or `appsettings.Local.json`
+- Push directly to `main`
+- Add magic strings inline — use constants
