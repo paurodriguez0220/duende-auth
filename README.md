@@ -97,4 +97,4 @@ Connection strings and provider value go in `appsettings.json`. Credentials go i
 
 ---
 
-*Paulo Rodriguez — paulo.rodriguez@fefundinfo.com*
+*Paulo Rodriguez — paurodriguez0220@gmail.com*
