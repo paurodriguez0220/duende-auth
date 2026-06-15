@@ -41,9 +41,7 @@ var identityServer = builder.Services
 
 if (builder.Environment.IsDevelopment())
     identityServer.AddDeveloperSigningCredential();
-else
-    throw new InvalidOperationException(
-        "A signing certificate must be configured for non-development environments. Call AddSigningCredential() with a valid certificate.");
+// In non-development, Duende's automatic key management stores and rotates signing keys via the operational store.
 
 builder.Services.AddAuthentication()
     .AddJwtBearer(options =>
