@@ -12,12 +12,12 @@ public static class Config
         new ApiResource("scalar-api", "Scalar API") { Scopes = { "scalar-api" } }
     ];
 
-    public static IEnumerable<Client> Clients =>
+    public static IEnumerable<Client> GetClients(IConfiguration configuration) =>
     [
         new Client
         {
             ClientId = "scalar-client",
-            ClientSecrets = { new Secret("secret".Sha256()) },
+            ClientSecrets = { new Secret(configuration["Clients:ScalarClient:Secret"]!.Sha256()) },
             AllowedGrantTypes = GrantTypes.ClientCredentials,
             AllowedScopes = { "scalar-api" }
         }

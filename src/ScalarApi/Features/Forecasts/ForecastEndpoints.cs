@@ -1,4 +1,5 @@
 using MediatR;
+using ScalarApi.Common.Constants;
 using ScalarApi.Features.Forecasts.CreateForecast;
 using ScalarApi.Features.Forecasts.GetForecasts;
 
@@ -8,10 +9,10 @@ public static class ForecastEndpoints
 {
     public static void MapForecastEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/forecasts")
+        var group = app.MapGroup("/api/v1/forecasts")
             .WithTags("Forecasts")
             .RequireAuthorization()
-            .RequireRateLimiting("fixed");
+            .RequireRateLimiting(PolicyNames.RateLimiterPolicy);
 
         group.MapGet("/", async (IMediator mediator, CancellationToken ct) =>
                 Results.Ok(await mediator.Send(new GetForecastsQuery(), ct)))
@@ -22,7 +23,7 @@ public static class ForecastEndpoints
         group.MapPost("/", async (CreateForecastCommand command, IMediator mediator, CancellationToken ct) =>
             {
                 var result = await mediator.Send(command, ct);
-                return Results.Created($"/api/forecasts/{result.Id}", result);
+                return Results.Created($"/api/v1/forecasts/{result.Id}", result);
             })
             .WithName("CreateForecast")
             .WithSummary("Create a weather forecast")

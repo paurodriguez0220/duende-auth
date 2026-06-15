@@ -18,7 +18,7 @@ builder.Services
     .AddAspNetIdentity<IdentityUser>()
     .AddInMemoryApiScopes(Config.ApiScopes)
     .AddInMemoryApiResources(Config.ApiResources)
-    .AddInMemoryClients(Config.Clients)
+    .AddInMemoryClients(Config.GetClients(builder.Configuration))
     .AddOperationalStore(options =>
         options.ConfigureDbContext = b =>
             b.UseSqlite(connString, sql =>

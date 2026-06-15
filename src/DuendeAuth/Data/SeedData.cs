@@ -14,11 +14,15 @@ public static class SeedData
         await sp.GetRequiredService<ApplicationDbContext>().Database.EnsureCreatedAsync();
         await sp.GetRequiredService<PersistedGrantDbContext>().Database.EnsureCreatedAsync();
 
+        var config = sp.GetRequiredService<IConfiguration>();
+        var adminPassword = config["SeedUsers:AdminPassword"]
+            ?? throw new InvalidOperationException("SeedUsers:AdminPassword is not configured.");
+
         var userManager = sp.GetRequiredService<UserManager<IdentityUser>>();
         if (await userManager.FindByNameAsync("admin") is null)
         {
             var admin = new IdentityUser { UserName = "admin", Email = "admin@example.com", EmailConfirmed = true };
-            await userManager.CreateAsync(admin, "Admin1234!");
+            await userManager.CreateAsync(admin, adminPassword);
         }
     }
 }
