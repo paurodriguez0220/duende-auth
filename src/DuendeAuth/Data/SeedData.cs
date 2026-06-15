@@ -1,4 +1,5 @@
 using Duende.IdentityServer.EntityFramework.DbContexts;
+using DuendeAuth.Common.Constants;
 using DuendeAuth.Data;
 using Microsoft.AspNetCore.Identity;
 
@@ -15,13 +16,18 @@ public static class SeedData
         await sp.GetRequiredService<PersistedGrantDbContext>().Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
 
         var config = sp.GetRequiredService<IConfiguration>();
-        var adminPassword = config["SeedUsers:AdminPassword"]
-            ?? throw new InvalidOperationException("SeedUsers:AdminPassword is not configured.");
+        var adminPassword = config[ConfigKeys.AdminPassword]
+            ?? throw new InvalidOperationException($"{ConfigKeys.AdminPassword} is not configured.");
 
         var userManager = sp.GetRequiredService<UserManager<IdentityUser>>();
-        if (await userManager.FindByNameAsync("admin").ConfigureAwait(false) is null)
+        if (await userManager.FindByNameAsync(SeedDefaults.AdminUserName).ConfigureAwait(false) is null)
         {
-            var admin = new IdentityUser { UserName = "admin", Email = "admin@example.com", EmailConfirmed = true };
+            var admin = new IdentityUser
+            {
+                UserName = SeedDefaults.AdminUserName,
+                Email = SeedDefaults.AdminEmail,
+                EmailConfirmed = true
+            };
             await userManager.CreateAsync(admin, adminPassword).ConfigureAwait(false);
         }
     }

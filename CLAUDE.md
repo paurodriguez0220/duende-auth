@@ -16,6 +16,7 @@ DuendeAuth is the long-lived service. Every new personal project registers as a 
 ```
 src/
   DuendeAuth/              Standalone auth server (duende.sln)
+    Common/Constants/      Named constants (no magic strings)
     Infrastructure/
       DbContextOptionsFactory.cs   DB provider abstraction
     Data/
@@ -109,3 +110,7 @@ Standards at `C:\Users\paulo.rodriguez\Paulo\standards` take precedence.
 - Commit `appsettings.Development.json` or `appsettings.Local.json`
 - Push directly to `main`
 - Add magic strings inline — use constants
+
+---
+*Maintained by paurodriguez0220 · Last updated: 2026-06-15*
+*Standards: https://github.com/paurodriguez0220/standards*
