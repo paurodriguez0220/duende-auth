@@ -5,4 +5,5 @@ public static class PolicyNames
     public const string Admin = "admin";
     public const string AdminRead = "admin-read";
     public const string OAuthSecurityScheme = "oauth2";
+    public const string RateLimit = "api";
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using System.Text;
 using Duende.IdentityServer.EntityFramework.DbContexts;
 using Duende.IdentityServer.EntityFramework.Mappers;
 using Duende.IdentityServer.Models;
@@ -16,13 +17,15 @@ public static class AdminEndpoints
     {
         var users = app.MapGroup("/api/v1/users")
             .RequireAuthorization(PolicyNames.AdminRead)
+            .RequireRateLimiting(PolicyNames.RateLimit)
             .WithTags("Users")
             .ProducesProblem(401)
-            .ProducesProblem(403);
+            .ProducesProblem(403)
+            .ProducesProblem(429);
 
         users.MapGet("/", GetUsersAsync)
             .WithSummary("List all users")
-            .Produces<PagedResult<UserDto>>();
+            .Produces<CursorResult<UserDto>>();
 
         users.MapPost("/", CreateUserAsync)
             .WithSummary("Create a user")
@@ -56,9 +59,11 @@ public static class AdminEndpoints
 
         var clients = app.MapGroup("/api/v1/clients")
             .RequireAuthorization(PolicyNames.AdminRead)
+            .RequireRateLimiting(PolicyNames.RateLimit)
             .WithTags("Clients")
             .ProducesProblem(401)
-            .ProducesProblem(403);
+            .ProducesProblem(403)
+            .ProducesProblem(429);
 
         clients.MapGet("/", GetClientsAsync)
             .WithSummary("List registered clients")
@@ -83,25 +88,38 @@ public static class AdminEndpoints
 
     private static async Task<IResult> GetUsersAsync(
         UserManager<IdentityUser> userManager,
-        int page = 1,
-        int pageSize = 50,
+        int limit = 50,
+        string? cursor = null,
         CancellationToken ct = default)
     {
-        const int maxPageSize = 100;
-        page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, maxPageSize);
+        const int maxLimit = 100;
+        limit = Math.Clamp(limit, 1, maxLimit);
 
-        var totalCount = await userManager.Users.CountAsync(ct).ConfigureAwait(false);
-        var users = await userManager.Users
+        string? decodedCursor = null;
+        if (cursor is not null)
+        {
+            try { decodedCursor = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)); }
+            catch { return Results.ValidationProblem(new Dictionary<string, string[]> { ["cursor"] = ["Invalid cursor value."] }); }
+        }
+
+        var query = userManager.Users.AsQueryable();
+        if (decodedCursor is not null)
+            query = query.Where(u => u.UserName != null && u.UserName.CompareTo(decodedCursor) > 0);
+
+        var items = await query
             .OrderBy(u => u.UserName)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+            .Take(limit + 1)
             .Select(u => new UserDto(u.Id, u.UserName!, u.Email, u.EmailConfirmed))
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
+            .ToListAsync(ct);
 
-        var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
-        return Results.Ok(new PagedResult<UserDto>(users, new PaginationMeta(page, pageSize, totalCount, totalPages)));
+        var hasMore = items.Count > limit;
+        if (hasMore) items.RemoveAt(items.Count - 1);
+
+        var nextCursor = hasMore
+            ? Convert.ToBase64String(Encoding.UTF8.GetBytes(items[^1].UserName))
+            : null;
+
+        return Results.Ok(new CursorResult<UserDto>(items, new CursorPaginationMeta(nextCursor, hasMore)));
     }
 
     private static async Task<IResult> CreateUserAsync(
@@ -117,7 +135,7 @@ public static class AdminEndpoints
                     .ToDictionary(g => g.Key, g => g.Select(r => r.ErrorMessage ?? "Invalid value.").ToArray()));
 
         var user = new IdentityUser { UserName = request.UserName, Email = request.Email, EmailConfirmed = true };
-        var result = await userManager.CreateAsync(user, request.Password).ConfigureAwait(false);
+        var result = await userManager.CreateAsync(user, request.Password);
 
         if (!result.Succeeded)
             return Results.ValidationProblem(
@@ -132,10 +150,13 @@ public static class AdminEndpoints
         UserManager<IdentityUser> userManager,
         CancellationToken ct)
     {
-        var user = await userManager.FindByIdAsync(id).ConfigureAwait(false);
+        var user = await userManager.FindByIdAsync(id);
         if (user is null) return Results.NotFound();
 
-        await userManager.DeleteAsync(user).ConfigureAwait(false);
+        var result = await userManager.DeleteAsync(user);
+        if (!result.Succeeded)
+            return Results.Problem(title: "Failed to delete user.", statusCode: StatusCodes.Status500InternalServerError);
+
         return Results.NoContent();
     }
 
@@ -144,10 +165,10 @@ public static class AdminEndpoints
         UserManager<IdentityUser> userManager,
         CancellationToken ct)
     {
-        var user = await userManager.FindByIdAsync(id).ConfigureAwait(false);
+        var user = await userManager.FindByIdAsync(id);
         if (user is null) return Results.NotFound();
 
-        var claims = await userManager.GetClaimsAsync(user).ConfigureAwait(false);
+        var claims = await userManager.GetClaimsAsync(user);
         return Results.Ok(claims.Select(c => new ClaimDto(c.Type, c.Value)));
     }
 
@@ -164,10 +185,10 @@ public static class AdminEndpoints
                     .GroupBy(r => r.MemberNames.FirstOrDefault() ?? string.Empty)
                     .ToDictionary(g => g.Key, g => g.Select(r => r.ErrorMessage ?? "Invalid value.").ToArray()));
 
-        var user = await userManager.FindByIdAsync(id).ConfigureAwait(false);
+        var user = await userManager.FindByIdAsync(id);
         if (user is null) return Results.NotFound();
 
-        var result = await userManager.AddClaimAsync(user, new Claim(request.Type, request.Value)).ConfigureAwait(false);
+        var result = await userManager.AddClaimAsync(user, new Claim(request.Type, request.Value));
 
         if (!result.Succeeded)
             return Results.ValidationProblem(
@@ -182,14 +203,14 @@ public static class AdminEndpoints
         UserManager<IdentityUser> userManager,
         CancellationToken ct)
     {
-        var user = await userManager.FindByIdAsync(id).ConfigureAwait(false);
+        var user = await userManager.FindByIdAsync(id);
         if (user is null) return Results.NotFound();
 
-        var claims = await userManager.GetClaimsAsync(user).ConfigureAwait(false);
+        var claims = await userManager.GetClaimsAsync(user);
         var claim = claims.FirstOrDefault(c => c.Type == type);
         if (claim is null) return Results.NotFound();
 
-        await userManager.RemoveClaimAsync(user, claim).ConfigureAwait(false);
+        await userManager.RemoveClaimAsync(user, claim);
         return Results.NoContent();
     }
 
@@ -201,7 +222,7 @@ public static class AdminEndpoints
             .Include(c => c.AllowedScopes)
             .Include(c => c.AllowedGrantTypes)
             .ToListAsync(ct)
-            .ConfigureAwait(false);
+            ;
 
         return Results.Ok(clients.Select(c => new ClientSummaryDto(
             c.ClientId,
@@ -221,10 +242,10 @@ public static class AdminEndpoints
                     .GroupBy(r => r.MemberNames.FirstOrDefault() ?? string.Empty)
                     .ToDictionary(g => g.Key, g => g.Select(r => r.ErrorMessage ?? "Invalid value.").ToArray()));
 
-        if (await configDb.Clients.AnyAsync(c => c.ClientId == request.ClientId, ct).ConfigureAwait(false))
+        if (await configDb.Clients.AnyAsync(c => c.ClientId == request.ClientId, ct))
             return Results.Problem(title: "A client with this ID already exists.", statusCode: 409);
 
-        var isCodeFlow = string.Equals(request.GrantType, "authorization_code", StringComparison.OrdinalIgnoreCase);
+        var isCodeFlow = string.Equals(request.GrantType, GrantTypeNames.AuthorizationCode, StringComparison.OrdinalIgnoreCase);
 
         if (isCodeFlow && (request.RedirectUris is null || request.RedirectUris.Count == 0))
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -233,7 +254,9 @@ public static class AdminEndpoints
             });
 
         var grantTypes = isCodeFlow ? GrantTypes.Code : GrantTypes.ClientCredentials;
-        var grantTypeNames = isCodeFlow ? ["authorization_code"] : (IReadOnlyList<string>)["client_credentials"];
+        var grantTypeNames = isCodeFlow
+            ? (IReadOnlyList<string>)[GrantTypeNames.AuthorizationCode]
+            : [GrantTypeNames.ClientCredentials];
 
         var client = new Client
         {
@@ -247,7 +270,7 @@ public static class AdminEndpoints
         }.ToEntity();
 
         configDb.Clients.Add(client);
-        await configDb.SaveChangesAsync(ct).ConfigureAwait(false);
+        await configDb.SaveChangesAsync(ct);
 
         return Results.Created(
             $"/api/v1/clients/{request.ClientId}",
@@ -264,12 +287,12 @@ public static class AdminEndpoints
 
         var client = await configDb.Clients
             .FirstOrDefaultAsync(c => c.ClientId == clientId, ct)
-            .ConfigureAwait(false);
+            ;
 
         if (client is null) return Results.NotFound();
 
         configDb.Clients.Remove(client);
-        await configDb.SaveChangesAsync(ct).ConfigureAwait(false);
+        await configDb.SaveChangesAsync(ct);
         return Results.NoContent();
     }
 }
