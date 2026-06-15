@@ -25,7 +25,8 @@ public static class Config
                     .Sha256())
             },
             AllowedGrantTypes = GrantTypes.ClientCredentials,
-            AllowedScopes = { "scalar-api" }
+            AllowedScopes = { "scalar-api" },
+            AllowedCorsOrigins = { "https://localhost:7248" }
         }
     ];
 }
