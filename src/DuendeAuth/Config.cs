@@ -17,7 +17,13 @@ public static class Config
         new Client
         {
             ClientId = "scalar-client",
-            ClientSecrets = { new Secret(configuration["Clients:ScalarClient:Secret"]!.Sha256()) },
+            ClientSecrets =
+            {
+                new Secret(
+                    (configuration["Clients:ScalarClient:Secret"]
+                        ?? throw new InvalidOperationException("Clients:ScalarClient:Secret is not configured."))
+                    .Sha256())
+            },
             AllowedGrantTypes = GrantTypes.ClientCredentials,
             AllowedScopes = { "scalar-api" }
         }

@@ -4,6 +4,75 @@ A self-hosted OpenID Connect / OAuth 2.0 auth server built on [Duende IdentitySe
 
 ---
 
+## Getting Started
+
+**Prerequisites:**
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+- (Optional) PostgreSQL or SQL Server for production deployments
+
+**Clone and run:**
+
+```bash
+git clone <repo-url>
+cd duende
+```
+
+Create `src/DuendeAuth/appsettings.Development.json` before running (this file is gitignored — never commit it):
+
+```json
+{
+  "Clients": { "ScalarClient": { "Secret": "dev-secret" } },
+  "SeedUsers": { "AdminPassword": "Admin1234!" }
+}
+```
+
+```bash
+dotnet run --project src/DuendeAuth --launch-profile https
+```
+
+Verify the server is up:
+
+```bash
+curl https://localhost:5001/.well-known/openid-configuration
+```
+
+---
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `dotnet build duende.sln` | Build the auth server |
+| `dotnet run --project src/DuendeAuth --launch-profile https` | Start on https://localhost:5001 |
+| `curl https://localhost:5001/.well-known/openid-configuration` | Verify the server is healthy |
+
+---
+
+## Architecture
+
+DuendeAuth is a standalone auth server that handles authentication and authorization for all personal projects. Client apps register in `Config.cs` and point their JWT authority at this server's URL.
+
+Key components:
+- **ASP.NET Core Identity** — user management (stored in SQLite by default, Postgres or SQL Server in production)
+- **Duende IdentityServer** — OIDC and OAuth 2.0 endpoints
+- **DbContextOptionsFactory** — Factory Method + Strategy pattern for switching database providers via config
+
+---
+
+## Configuration
+
+Secrets go in `appsettings.Development.json` (gitignored) or environment variables — never in `appsettings.json`.
+
+| Key | Source | Description |
+| --- | --- | --- |
+| `Database:Provider` | `appsettings.json` | Database provider: `sqlite` (default), `postgres`, `sqlserver` |
+| `ConnectionStrings:IdentityConnection` | `appsettings.json` | Connection string for ASP.NET Core Identity tables |
+| `ConnectionStrings:GrantsConnection` | `appsettings.json` | Connection string for Duende operational grants tables |
+| `Clients:ScalarClient:Secret` | `appsettings.Development.json` | Client secret for the ScalarApi OAuth2 client |
+| `SeedUsers:AdminPassword` | `appsettings.Development.json` | Password for the seeded admin user |
+
+---
+
 ## Architecture decisions
 
 ### Why Duende IdentityServer?
@@ -97,4 +166,11 @@ Connection strings and provider value go in `appsettings.json`. Credentials go i
 
 ---
 
-*Paulo Rodriguez — paurodriguez0220@gmail.com*
+## Links
+
+- [Duende IdentityServer docs](https://docs.duendesoftware.com/identityserver/v7)
+- [Standards](https://github.com/paurodriguez0220/standards)
+
+---
+*Maintained by paurodriguez0220 · Last updated: 2026-06-15*
+*Standards: https://github.com/paurodriguez0220/standards*

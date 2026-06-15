@@ -26,7 +26,7 @@ builder.Services
 
 var app = builder.Build();
 
-await SeedData.InitializeAsync(app.Services);
+await SeedData.InitializeAsync(app.Services, default);
 
 app.UseIdentityServer();
 
