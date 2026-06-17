@@ -1,0 +1,67 @@
+name: "DuendeAuth Infrastructure"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy-infra:
+    name: "Deploy infrastructure — ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Validate required secrets"
+        run: |
+          missing=()
+          [ -z "$PG_ADMIN_PASSWORD" ] && missing+=("PG_ADMIN_PASSWORD")
+          [ -z "$SCALAR_CLIENT_SECRET" ] && missing+=("SCALAR_CLIENT_SECRET")
+          [ -z "$ADMIN_CLIENT_SECRET" ] && missing+=("ADMIN_CLIENT_SECRET")
+          [ -z "$WATCHER_CLIENT_SECRET" ] && missing+=("WATCHER_CLIENT_SECRET")
+          [ -z "$ADMIN_PASSWORD" ] && missing+=("ADMIN_PASSWORD")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing secrets in GitHub Environment: ${missing[*]} — aborting"
+            exit 1
+          fi
+        env:
+          PG_ADMIN_PASSWORD: ${{ secrets.PG_ADMIN_PASSWORD }}
+          SCALAR_CLIENT_SECRET: ${{ secrets.SCALAR_CLIENT_SECRET }}
+          ADMIN_CLIENT_SECRET: ${{ secrets.ADMIN_CLIENT_SECRET }}
+          WATCHER_CLIENT_SECRET: ${{ secrets.WATCHER_CLIENT_SECRET }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+
+      - name: "Install Azure CLI bicep extension"
+        run: az bicep install
+
+      - name: "Lint bicep"
+        run: az bicep lint --file infra/duende/main.bicep
+
+      - name: "Login to Azure"
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: "Deploy infrastructure"
+        run: |
+          az deployment sub create \
+            --location australiasoutheast \
+            --template-file infra/duende/main.bicep \
+            --parameters infra/duende/parameters/${{ inputs.environment }}.bicepparam
+        env:
+          PG_ADMIN_PASSWORD: ${{ secrets.PG_ADMIN_PASSWORD }}
+          SCALAR_CLIENT_SECRET: ${{ secrets.SCALAR_CLIENT_SECRET }}
+          ADMIN_CLIENT_SECRET: ${{ secrets.ADMIN_CLIENT_SECRET }}
+          WATCHER_CLIENT_SECRET: ${{ secrets.WATCHER_CLIENT_SECRET }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}

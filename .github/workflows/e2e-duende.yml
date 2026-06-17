@@ -1,0 +1,72 @@
+name: "DuendeAuth E2E Tests"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, prod]
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: "Playwright E2E — ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Validate required secrets"
+        run: |
+          missing=()
+          [ -z "$ADMIN_CLIENT_SECRET" ] && missing+=("ADMIN_CLIENT_SECRET")
+          [ -z "$WATCHER_CLIENT_SECRET" ] && missing+=("WATCHER_CLIENT_SECRET")
+          [ -z "$E2E_BASE_URL" ] && missing+=("E2E_BASE_URL")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing secrets/vars in GitHub Environment: ${missing[*]} — aborting"
+            exit 1
+          fi
+        env:
+          ADMIN_CLIENT_SECRET: ${{ secrets.ADMIN_CLIENT_SECRET }}
+          WATCHER_CLIENT_SECRET: ${{ secrets.WATCHER_CLIENT_SECRET }}
+          E2E_BASE_URL: ${{ vars.E2E_BASE_URL }}
+
+      - name: "Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+
+      - name: "Install dependencies"
+        run: npm ci
+        working-directory: tests/e2e
+
+      - name: "Install Playwright browsers"
+        run: npx playwright install --with-deps chromium
+        working-directory: tests/e2e
+
+      - name: "Run Playwright tests"
+        run: npx playwright test
+        working-directory: tests/e2e
+        env:
+          BASE_URL: ${{ vars.E2E_BASE_URL }}
+          ADMIN_CLIENT_SECRET: ${{ secrets.ADMIN_CLIENT_SECRET }}
+          WATCHER_CLIENT_SECRET: ${{ secrets.WATCHER_CLIENT_SECRET }}
+
+      - name: "Upload test report"
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ inputs.environment }}
+          path: tests/e2e/playwright-report/
+          retention-days: 7

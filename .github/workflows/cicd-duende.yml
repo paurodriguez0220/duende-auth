@@ -1,0 +1,105 @@
+name: "DuendeAuth CI/CD"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  DOTNET_VERSION: "9.0.x"
+
+jobs:
+  build-and-test:
+    name: "Build and test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Setup .NET"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: "Install Azure CLI bicep extension"
+        run: az bicep install
+
+      - name: "Lint bicep"
+        run: az bicep lint --file infra/duende/main.bicep
+
+      - name: "Restore dependencies"
+        run: dotnet restore duende.sln
+
+      - name: "Build"
+        run: dotnet build duende.sln --no-restore --configuration Release
+
+      - name: "Run tests"
+        run: dotnet test duende.sln --no-build --configuration Release --verbosity normal
+
+      - name: "Publish"
+        run: dotnet publish src/DuendeAuth/DuendeAuth.csproj --configuration Release --output publish/
+
+      - name: "Upload publish artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: duende-publish
+          path: publish/
+          retention-days: 1
+
+  deploy:
+    name: "Deploy to ${{ github.event.inputs.environment || 'dev' }}"
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - name: "Validate required secrets"
+        run: |
+          if [ -z "$AZURE_CLIENT_ID" ]; then
+            echo "::error::AZURE_CLIENT_ID not set in GitHub Environment — aborting"
+            exit 1
+          fi
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+
+      - name: "Download publish artifact"
+        uses: actions/download-artifact@v4
+        with:
+          name: duende-publish
+          path: publish/
+
+      - name: "Login to Azure"
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: "Zip artifact"
+        run: zip -r duende.zip publish/
+
+      - name: "Deploy to App Service"
+        run: |
+          az webapp deploy \
+            --resource-group "rg-duende-$ENV-ase" \
+            --name "app-duende-$ENV-ase" \
+            --src-path duende.zip \
+            --type zip
+        env:
+          ENV: ${{ github.event.inputs.environment || 'dev' }}
+
+  e2e:
+    name: "Run E2E tests"
+    needs: deploy
+    uses: ./.github/workflows/e2e-duende.yml
+    with:
+      environment: ${{ github.event.inputs.environment || 'dev' }}
+    secrets: inherit
